@@ -221,7 +221,7 @@ def get_vital_sign(visit_dict, path):
             height = float(height_dict[patient_id][0])
             weight = float(weight_dict[patient_id][0])
             time = weight_dict[patient_id][1]
-            area = math.sqrt(height*weight/3600)
+            area = 0.0061*height+0.0128*weight-0.1529
             bmi = weight/(height*height)*10000
             area_dict[patient_id] = [area, time]
             bmi_dict[patient_id] = [bmi, time]
@@ -514,7 +514,7 @@ def get_labtest(visit_dict, path):
                 elif item_name == '红细胞比积测定':
                     if labtest_dict[patient_id]['红细胞比积'][2] > item_time:
                         labtest_dict[patient_id]['红细胞比积'] = [result, unit, item_time]
-                elif item_name == '红细胞体积分布宽度CV':
+                elif item_name == '红细胞体积分布宽度测定CV':
                     if labtest_dict[patient_id]['红细胞体积分布宽度'][2] > item_time:
                         labtest_dict[patient_id]['红细胞体积分布宽度'] = [result, unit, item_time]
                 elif item_name == '白细胞计数':
@@ -644,10 +644,6 @@ def get_diagnosis(visit_dict, path):
         diagnosis_list_dict['脑梗塞'] = 'False'
         diagnosis_list_dict['脑出血'] = 'False'
         diagnosis_list_dict['心力衰竭'] = 'False'
-        diagnosis_list_dict['心功能不全1级'] = 'False'
-        diagnosis_list_dict['心功能不全2级'] = 'False'
-        diagnosis_list_dict['心功能不全3级'] = 'False'
-        diagnosis_list_dict['心功能不全4级'] = 'False'
         diagnosis_list_dict['肾功能不全'] = 'False'
         diagnosis_dict[patient_id] = diagnosis_list_dict
 
@@ -694,29 +690,9 @@ def get_diagnosis(visit_dict, path):
                 if diagnosis_desc.__contains__('肾功能'):
                     diagnosis_dict[patient_id]['肾功能不全'] = 'True'
 
-                if diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心衰') or \
-                        diagnosis_desc.__contains__('心功能'):
+                if diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心功能'):
                     diagnosis_dict[patient_id]['心力衰竭'] = 'True'
 
-                if (diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心衰') or
-                        diagnosis_desc.__contains__('心功能')) and (diagnosis_desc.__contains__('IV') or
-                                                                 diagnosis_desc.__contains__('4级')):
-                    diagnosis_dict[patient_id]['心功能不全4级'] = 'True'
-
-                if (diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心衰') or
-                        diagnosis_desc.__contains__('心功能')) and (diagnosis_desc.__contains__('III') or
-                                                                 diagnosis_desc.__contains__('3级')):
-                    diagnosis_dict[patient_id]['心功能不全3级'] = 'True'
-
-                if (diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心衰') or
-                        diagnosis_desc.__contains__('心功能')) and (diagnosis_desc.__contains__('II') or
-                                                                 diagnosis_desc.__contains__('2级')):
-                    diagnosis_dict[patient_id]['心功能不全2级'] = 'True'
-
-                if (diagnosis_desc.__contains__('心力衰竭') or diagnosis_desc.__contains__('心衰') or
-                        diagnosis_desc.__contains__('心功能')) and (diagnosis_desc.__contains__('I') or
-                                                                 diagnosis_desc.__contains__('1级')):
-                    diagnosis_dict[patient_id]['心功能不全1级'] = 'True'
     with open(path, 'w', encoding='utf-8-sig', newline="") as file:
         matrix_to_write = []
         csv_writer = csv.writer(file)
@@ -866,7 +842,7 @@ def get_exam_item(visit_dict, area_dict, path):
             ivst = float(pat_exam_dict['室间隔厚度'])
             pwt = float(pat_exam_dict['左室后壁厚度'])
             pat_exam_dict['左室质量指数'] = \
-                (0.8 * (1.04 * float((lvdd+ivst+pwt))**3 - float(lvdd)**3) + 0.6)/float(area_dict[patient_id])/1000
+                (0.8 * 1.04 * (float(lvdd+ivst+pwt)**3 - float(lvdd)**3) + 0.6)/float(area_dict[patient_id])/1000
         if area_dict[patient_id] != str(-1) and pat_exam_dict['左室舒张末容量'] != -1:
             pat_exam_dict['左室舒张末容量指数'] = float(pat_exam_dict['左室舒张末容量'])/float(area_dict[patient_id])
 
@@ -1166,8 +1142,8 @@ def get_feature(path, read_from_file):
 
 def main():
     path = os.path.abspath('..\\resource\\')
-    read_from_file = {'visit': False, 'vital_sign': False, 'exam': False, 'labtest': False, 'hospitalized': False,
-                      'sex': False, 'age': False, 'pharmacy': False, 'diagnosis': False}
+    read_from_file = {'visit': True, 'vital_sign': True, 'exam': True, 'labtest': True, 'hospitalized': True,
+                      'sex': True, 'age': True, 'pharmacy': True, 'diagnosis': False}
     feature_dict = get_feature(path, read_from_file)
     # write head
     head_list = ['住院号']

@@ -146,11 +146,11 @@ def main():
     # impute_file_path = os.path.abspath('..\\resource\\HFDatabase\\general_stat_imputed.csv')
     # missing_rate_path = os.path.abspath('..\\resource\\HFDatabase\\hf_database_missing_rate.csv')
 
-    source_file_path = os.path.abspath('..\\resource\\general_stat_no_impute.csv')
+    source_file_path = os.path.abspath('..\\resource\\合并数据集.csv')
     impute_file_path = os.path.abspath('..\\resource\\general_preprocessed.csv')
     missing_rate_path = os.path.abspath('..\\resource\\missing_rate.csv')
 
-    source_data = read_data(path=source_file_path, encoding='utf-8-sig')
+    source_data = read_data(path=source_file_path, encoding='gbk')
     missing_rate_dict = missing_rate_stat(source_data, missing_rate_path)
     imputed_data, type_dict = impute(source_data)
     imputed_data = normalization(imputed_data, type_dict)
