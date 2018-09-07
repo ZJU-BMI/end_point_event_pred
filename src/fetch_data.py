@@ -17,8 +17,7 @@ def get_latest_visit_id(path, patient_id_list=None):
     conn = connection.get_connection()
     visit_dict = dict()
     with conn.cursor() as cursor:
-        sql = "select patient_id, max(visit_id) from pat_visit where" \
-              " substr(admission_date_time,0,4) > 2008  group by patient_id"
+        sql = "select patient_id, max(visit_id) from pat_visit group by patient_id"
         for row in cursor.execute(sql):
             visit_dict[row[0]] = row[1]
 
@@ -836,8 +835,8 @@ def get_exam_item(visit_dict, area_dict, path):
 
     for patient_id in exam_dict:
         pat_exam_dict = exam_dict[patient_id]
-        if area_dict[patient_id] != str(-1) and pat_exam_dict['左室舒张末内径'] != -1 and \
-                pat_exam_dict['室间隔厚度'] != -1 and pat_exam_dict['左室后壁厚度'] != -1:
+        if area_dict[patient_id] != str(-1) and pat_exam_dict['左室舒张末内径'] != str(-1) and \
+                pat_exam_dict['室间隔厚度'] != str(-1) and pat_exam_dict['左室后壁厚度'] != str(-1):
             lvdd = float(pat_exam_dict['左室舒张末内径'])
             ivst = float(pat_exam_dict['室间隔厚度'])
             pwt = float(pat_exam_dict['左室后壁厚度'])
@@ -1140,11 +1139,28 @@ def get_feature(path, read_from_file):
     return feature_dict
 
 
+def eliminate_incomplete_data(feature_dict):
+    # 定义所有数据项中，丢失数据大于十个的为缺失过多的数据，直接删除
+    eliminate_id_set = set()
+    for patient_id in feature_dict:
+        lost_count = 0
+        for item in feature_dict[patient_id]:
+            if feature_dict[patient_id][item] == '-1' or feature_dict[patient_id][item] == -1:
+                lost_count += 1
+        if lost_count > 10:
+            eliminate_id_set.add(patient_id)
+
+    for patient_id in eliminate_id_set:
+        feature_dict.pop(patient_id)
+    return feature_dict
+
+
 def main():
     path = os.path.abspath('..\\resource\\')
     read_from_file = {'visit': True, 'vital_sign': True, 'exam': True, 'labtest': True, 'hospitalized': True,
-                      'sex': True, 'age': True, 'pharmacy': True, 'diagnosis': False}
+                      'sex': True, 'age': True, 'pharmacy': True, 'diagnosis': True}
     feature_dict = get_feature(path, read_from_file)
+    feature_dict = eliminate_incomplete_data(feature_dict)
     # write head
     head_list = ['住院号']
     # 此ID号为任意选择，无特殊意义

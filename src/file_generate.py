@@ -13,7 +13,7 @@ def read_data(file_path):
     with open(file_path, 'r', encoding='gbk', newline="") as file:
         csv_reader = csv.reader(file)
         # 跳过第一行Head和第一列
-        for line in islice(csv_reader, 1, None):
+        for line in islice(csv_reader, 3, None):
             row = []
             for item in islice(line, 1, None):
                 value = re.findall('[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?', item)
@@ -23,37 +23,15 @@ def read_data(file_path):
     return np.array(data_matrix)
 
 
-def read_label(file_path):
-    thirty_day_readmit = list()
-    one_year_readmit = list()
-    cardio_death = list()
-    all_cause_death = list()
-
-    with open(file_path, 'r', encoding='gbk', newline="") as file:
-        csv_reader = csv.reader(file)
-        # 跳过第一行Head和第一列
-        for line in islice(csv_reader, 1, None):
-            thirty_day_readmit.append(line[0])
-            one_year_readmit.append(line[0])
-            cardio_death.append(line[0])
-            all_cause_death.append(line[0])
-
-    thirty_day_readmit = np.array(thirty_day_readmit)
-    one_year_readmit = np.array(one_year_readmit)
-    cardio_death = np.array(cardio_death)
-    all_cause_death = np.array(all_cause_death)
-    return thirty_day_readmit, one_year_readmit, cardio_death, all_cause_death
-
-
 def event_split(data):
-    feature = data[:, 0:-4]
-    thirty_day_readmit = data[:, -4]
+    feature = data[:, 0:-5]
+    thirty_day_readmit = data[:, -5]
     thirty_day_readmit = thirty_day_readmit[:, np.newaxis]
-    one_year_readmit = data[:, -3]
+    one_year_readmit = data[:, -4]
     one_year_readmit = one_year_readmit[:, np.newaxis]
-    cardio_death = data[:, -2]
+    cardio_death = data[:, -3]
     cardio_death = cardio_death[:, np.newaxis]
-    all_cause_death = data[:, -1]
+    all_cause_death = data[:, -2]
     all_cause_death = all_cause_death[:, np.newaxis]
 
     thirty_day_readmit = np.concatenate([feature, thirty_day_readmit], axis=1)
@@ -63,9 +41,10 @@ def event_split(data):
     return thirty_day_readmit, one_year_readmit, cardio_death, all_cause_death
 
 
-def five_fold_split(data):
+def five_fold_split(data, skip_zero=False):
     # 数据规范，data是一个 M*N的矩阵，其中，M*(N-1)的部分是特征，最后一列是标签
     # 标签要求正标签为1，负标签为-1，无标签为0
+    # 如果skip被设为True，则跳过无标签数据
     pos_data = list()
     neg_data = list()
     no_label_data = list()
@@ -75,8 +54,10 @@ def five_fold_split(data):
             pos_data.append(item)
         elif item[-1] == -1:
             neg_data.append(item)
-        elif item[-1] == 0:
+        elif item[-1] == 0 and not skip_zero:
             no_label_data.append(item)
+        elif item[-1] == 0 and skip_zero:
+            pass
         else:
             raise ValueError("")
 
@@ -94,14 +75,19 @@ def five_fold_split(data):
             fold_pos = np.array(pos_data[i*pos_num:(i+1)*pos_num])
             fold_neg = np.array(neg_data[i*neg_num:(i+1)*neg_num])
             fold_no = np.array(no_label_data[i*no_num:(i+1)*no_num])
-            five_fold.append(np.concatenate([fold_pos, fold_neg, fold_no], axis=0))
+            if no_num != 0:
+                five_fold.append(np.concatenate([fold_pos, fold_neg, fold_no], axis=0))
+            else:
+                five_fold.append(np.concatenate([fold_pos, fold_neg], axis=0))
         else:
             # 由于数据珍贵，不能丢弃任何一个数据
             fold_pos = np.array(pos_data[4*pos_num:])
             fold_neg = np.array(neg_data[4*neg_num:])
             fold_no = np.array(no_label_data[4*no_num:])
-
-            five_fold.append(np.concatenate([fold_pos, fold_neg, fold_no], axis=0))
+            if no_num != 0:
+                five_fold.append(np.concatenate([fold_pos, fold_neg, fold_no], axis=0))
+            else:
+                five_fold.append(np.concatenate([fold_pos, fold_neg], axis=0))
     return five_fold
 
 
@@ -151,9 +137,8 @@ def write_data(data, label, data_path, label_path):
 
 
 def semi_supervised_data_generate():
-    source_data_path = os.path.abspath('..\\resource\\Data\\source_data_imputed_with_HF_database.csv')
+    source_data_path = os.path.abspath('..\\resource\\Data\\general_preprocessed.csv')
     data = read_data(source_data_path)
-    print()
     thirty_day_readmit, one_year_readmit, cardio_death, all_cause_death = event_split(data)
     thirty_day_readmit_5_fold = five_fold_split(thirty_day_readmit)
     one_year_readmit_5_fold = five_fold_split(one_year_readmit)

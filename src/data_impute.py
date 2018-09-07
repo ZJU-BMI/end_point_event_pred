@@ -34,8 +34,7 @@ def impute(data):
         sum_dict[item] = 0
     for patient_id in data:
         for item in data[patient_id]:
-            value = re.findall('[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?', data[patient_id][item])
-            value = float(value[0])
+            value = float(data[patient_id][item])
             if value != -1.0:
                 count_dict[item] += 1
                 sum_dict[item] += value
@@ -48,17 +47,19 @@ def impute(data):
             mean_dict[item] = sum_dict[item]/count_dict[item]
 
     # category数据填充0，numerical填充平均数
+    # 对四个标签项不做填充处理
     for patient_id in data:
         for item in data[patient_id]:
-            value = re.findall('[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?', data[patient_id][item])
-            value = float(value[0])
+            value = float(data[patient_id][item])
             if value != -1.0:
                 continue
 
             if type_dict[item] == 'Numerical':
                 data[patient_id][item] = mean_dict[item]
             elif type_dict[item] == 'Categorical':
-                data[patient_id][item] = 0
+                if item != '30天心源性再住院' and item != '1年内心源性再住院' and item != '心源性死亡' and \
+                        item != '全因死亡':
+                    data[patient_id][item] = 0
             else:
                 raise ValueError('Value Error')
     return data, type_dict
@@ -125,7 +126,7 @@ def normalization(data, type_dict):
 
 def read_data(path, encoding):
     data_dict = dict()
-    with open(path, 'r', encoding=encoding, newline="") as file:
+    with open(path, 'r', encoding=encoding, newline="", errors='ignore') as file:
         csv_reader = csv.reader(file)
         head_dict = dict()
         for i, line in enumerate(csv_reader):

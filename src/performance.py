@@ -1,6 +1,8 @@
 # encoding=utf-8
 import os
 import csv
+import datetime
+import math
 
 
 def read_result(path, u=None, w=None, svm=None):
@@ -15,26 +17,26 @@ def read_result(path, u=None, w=None, svm=None):
     file_path = os.path.join(path, folder)
     prediction = []
     for i in range(5):
+        batch = []
         with open(os.path.join(file_path, str(i) + 'ted.outputs'), 'r') as file:
             lines = file.readlines()
             for item in lines:
                 item_float = float(item)
-                if item_float > 0:
-                    item_int = 1
-                else:
-                    item_int = -1
-                prediction.append(item_int)
+                batch.append(item_float)
+        prediction.append(batch)
     return prediction
 
 
 def read_label(path):
     label = []
     for i in range(5):
+        batch = []
         with open(os.path.join(path, str(i)+'tel'), 'r') as file:
             lines = file.readlines()
             for item in lines:
                 item_int = int(item)
-                label.append(item_int)
+                batch.append(item_int)
+        label.append(batch)
     return label
 
 
@@ -46,54 +48,112 @@ def get_confusion_mat(prediction, label):
     for i in range(len(prediction)):
         if prediction[i] == 1 and label[i] == 1:
             tp += 1
-        elif prediction[i] == 1 and label[i] == -1:
+        elif prediction[i] == 1 and label[i] == 0:
             fp += 1
-        elif prediction[i] == -1 and label[i] == -1:
+        elif prediction[i] == 0 and label[i] == 0:
             tn += 1
-        elif prediction[i] == -1 and label[i] == 1:
+        elif prediction[i] == 0 and label[i] == 1:
             fn += 1
         else:
             raise ValueError('')
     return tp, tn, fp, fn
 
 
-def performance_eval(tp, tn, fp, fn, item):
-    acc = (tp+tn)/(tp+tn+fp+fn)
-    if tp+fn != 0:
-        recall = tp/(tp+fn)
-    else:
-        recall = -1
-    if tp+fp != 0:
-        precision = tp/(tp+fp)
-    else:
-        precision = -1
-    f1 = 2*tp/(2*tp+fp+fn)
-    specificity = tn/(tn+fp)
+def performance_eval(prediction, label):
+    auc, auc_ci = get_auc(prediction, label)
 
-    print_str = '%10s acc: %2.4f, recall: %2.4f, precision: %2.4f, f1: %.4f, specificity: %2.4f'\
-                % (item, acc, recall, precision, f1, specificity)
-    print(print_str)
-    return {'acc': acc, 'recall': recall, 'precision': precision, 'f1': f1, 'specificity': specificity}
+    def single_batch_performance(prediction_, label_):
+        calibration_pred = list()
+        calibration_label = list()
+        for item_ in prediction_:
+            if item_ > 0:
+                calibration_pred.append(1)
+            else:
+                calibration_pred.append(0)
+        for item_ in label_:
+            if item_ > 0:
+                calibration_label.append(1)
+            else:
+                calibration_label.append(0)
+        prediction_ = calibration_pred
+        label_ = calibration_label
+
+        tp, tn, fp, fn = get_confusion_mat(prediction_, label_)
+        acc_ = (tp + tn) / (tp + tn + fp + fn)
+        if tp + fn != 0:
+            recall_ = tp / (tp + fn)
+        else:
+            recall_ = -1
+        if tp + fp != 0:
+            precision_ = tp / (tp + fp)
+        else:
+            precision_ = -1
+        f1_ = 2 * tp / (2 * tp + fp + fn)
+        return {'acc': acc_, 'precision': precision_, 'recall': recall_, 'f1': f1_}
+
+    performance_list = []
+    for k in range(len(prediction)):
+        performance_list.append(single_batch_performance(prediction[k], label[k]))
+    # mean
+    acc = 0
+    precision = 0
+    recall = 0
+    f1 = 0
+    for item in performance_list:
+        acc += item['acc'] / len(performance_list)
+        precision += item['precision'] / len(performance_list)
+        recall += item['recall'] / len(performance_list)
+        f1 += item['f1'] / len(performance_list)
+
+    acc_ci = 0
+    precision_ci = 0
+    recall_ci = 0
+    f1_ci = 0
+    for item in performance_list:
+        acc_ci += (item['acc'] - acc) ** 2 / (len(performance_list) - 1)
+        precision_ci += (item['acc'] - acc) ** 2 / (len(performance_list) - 1)
+        recall_ci += (item['acc'] - acc) ** 2 / (len(performance_list) - 1)
+        f1_ci += (item['acc'] - acc) ** 2 / (len(performance_list) - 1)
+    acc_ci = 1.96 * math.sqrt(acc_ci) / math.sqrt(len(performance_list))
+    precision_ci = 1.96 * math.sqrt(precision_ci) / math.sqrt(len(performance_list))
+    recall_ci = 1.96 * math.sqrt(recall_ci) / math.sqrt(len(performance_list))
+    f1_ci = 1.96 * math.sqrt(f1_ci) / math.sqrt(len(performance_list))
+
+    result_dict = dict()
+    result_dict['auc'] = auc
+    result_dict['acc'] = acc
+    result_dict['precision'] = precision
+    result_dict['recall'] = recall
+    result_dict['f1'] = f1
+    result_dict['auc_ci'] = auc_ci
+    result_dict['acc_ci'] = acc_ci
+    result_dict['precision_ci'] = precision_ci
+    result_dict['recall_ci'] = recall_ci
+    result_dict['f1_ci'] = f1_ci
+    return result_dict
 
 
-def find_best(performance_svm, performance_semi_svm):
+def find_best_performance(performance_svm, performance_semi_svm):
     best_dict = {}
     for item in performance_svm:
         best_dict[item] = dict()
         best_dict[item]['svm'] = performance_svm[item]
 
+        best_auc = -1
         best_acc = -1
         best_recall = -1
         best_precision = -1
         best_f1 = -1
-        best_specificity = -1
 
         for case in performance_semi_svm[item]:
+            auc = performance_semi_svm[item][case]['auc']
             acc = performance_semi_svm[item][case]['acc']
             recall = performance_semi_svm[item][case]['recall']
             precision = performance_semi_svm[item][case]['precision']
             f1 = performance_semi_svm[item][case]['f1']
-            specificity = performance_semi_svm[item][case]['specificity']
+            if auc > best_auc:
+                best_auc = auc
+                best_dict[item]['auc'] = performance_semi_svm[item][case]
             if acc > best_acc:
                 best_acc = acc
                 best_dict[item]['acc'] = performance_semi_svm[item][case]
@@ -106,25 +166,48 @@ def find_best(performance_svm, performance_semi_svm):
             if f1 > best_f1:
                 best_f1 = f1
                 best_dict[item]['f1'] = performance_semi_svm[item][case]
-            if specificity > best_specificity:
-                best_specificity = specificity
-                best_dict[item]['specificity'] = performance_semi_svm[item][case]
     return best_dict
 
 
-def write_best(path, best_dict):
+def get_auc(prediction, label):
+    def single_batch_auc(pred_, label_):
+        pos_index_list = list()
+        neg_index_list = list()
+        for i in range(len(label_)):
+            if label_[i] == 1:
+                pos_index_list.append(i)
+            else:
+                neg_index_list.append(i)
+        great_sum = 0
+        for i in pos_index_list:
+            for j in neg_index_list:
+                if pred_[i] > pred_[j]:
+                    great_sum += 1
+        auc_ = great_sum / (len(pos_index_list) * len(neg_index_list))
+        return auc_
+    auc_list = []
+    for k in range(len(prediction)):
+        auc_list.append(single_batch_auc(prediction[k], label[k]))
+    # mean auc
+    auc = 0
+    for item in auc_list:
+        auc += item / len(auc_list)
+    # confidence interval
+    ci = 0
+    for item in auc_list:
+        ci += (auc-item)**2 / (len(auc_list) - 1)
+    ci = 1.96 * math.sqrt(ci) / math.sqrt(len(auc_list))
+    return auc, ci
+
+
+def write_best_performance(path, best_dict):
     with open(path, 'w', encoding='utf-8-sig', newline="") as file:
         csv_writer = csv.writer(file)
         data_to_write = []
 
         # write head
-        head = list()
-        head.append("")
-        head.append("best measurement")
-        for case in best_dict:
-            for stat_type in best_dict[case]:
-                head.append(stat_type)
-            break
+        head = ["best measurement", 'type', 'auc', 'acc', 'precision', 'recall', 'f1', 'auc_ci', 'acc_ci',
+                'precision_ci', 'recall_ci', 'f1_ci']
         data_to_write.append(head)
         for case in best_dict:
             for stat_type in best_dict[case]:
@@ -137,12 +220,71 @@ def write_best(path, best_dict):
         csv_writer.writerows(data_to_write)
 
 
+def declie_analysis(prediction, label):
+    combine = list()
+    declie_list = list()
+    for i in range(len(prediction)):
+        for j in range(len(prediction[i])):
+            combine.append([prediction[i][j], label[i][j]])
+    combine = sorted(combine, key=lambda x: x[0])
+    declie_number = len(combine)//10
+    for i in range(10):
+        declie_list.append(0)
+        start_index = declie_number*i
+        if i == 9:
+            end_index = len(combine)
+        else:
+            end_index = declie_number*(i+1)
+        for j in range(start_index, end_index):
+            if combine[j][1] == 1:
+                declie_list[i] += 1
+
+    for i in range(len(declie_list)):
+        if i != 9:
+            declie_list[i] = declie_list[i]/declie_number
+        else:
+            declie_list[i] = declie_list[i] / (declie_number+len(combine) % 10)
+    return declie_list
+
+
+def find_best_declie(svm_declie_dict, semi_declie_dict, best_dict):
+    # 以AUC最高结果的为十分位输出
+    best_declie = dict()
+    for item in best_dict:
+        key = best_dict[item]['auc']['para']
+        best_declie[item] = [semi_declie_dict[item][key], svm_declie_dict[item]]
+    return best_declie
+
+
+def write_best_declie(best_declie, path):
+    data_to_write = list()
+    # head
+    data_to_write.append(['type', 'model', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+    for key in best_declie:
+        svm_list = list()
+        semi_list = list()
+        svm_list.append(key)
+        semi_list.append(key)
+        svm_list.append('svm')
+        semi_list.append('semi_svm')
+        for item in best_declie[key][0]:
+            semi_list.append(item)
+        for item in best_declie[key][1]:
+            svm_list.append(item)
+        data_to_write.append(svm_list)
+        data_to_write.append(semi_list)
+        data_to_write.append([''])
+    with open(path, 'w', encoding='utf-8-sig', newline="") as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerows(data_to_write)
+
+
 def main():
-    root = os.path.abspath('..\\resource\\data\\svm_data\\')
-    one_year_path = os.path.join(root, '1_year_readmit')
-    thirty_day_path = os.path.join(root, '30_day_readmit')
-    cardio_path = os.path.join(root, 'cardio_death')
-    all_cause_path = os.path.join(root, 'all_cause_death')
+    root = os.path.abspath('..\\resource\\data\\')
+    one_year_path = os.path.join(root, 'svm_data\\1_year_readmit')
+    thirty_day_path = os.path.join(root, 'svm_data\\30_day_readmit')
+    cardio_path = os.path.join(root, 'svm_data\\cardio_death')
+    all_cause_path = os.path.join(root, 'svm_data\\all_cause_death')
     path_dict = {'1y': one_year_path, '30d': thirty_day_path,  'cardio': cardio_path, 'all': all_cause_path}
 
     # read_label
@@ -154,25 +296,33 @@ def main():
 
     performance_svm = dict()
     performance_semi_svm = dict()
+    svm_declie_dict = dict()
+    semi_declie_dict = dict()
     for item in path_dict:
-        print('svm')
         prediction = read_result(path_dict[item], svm='svm')
         label = label_dict[item]
-        tp, tn, fp, fn = get_confusion_mat(prediction, label)
-        performance_svm[item] = performance_eval(tp, tn, fp, fn, item)
+        result_list = performance_eval(prediction, label)
+        result_list['para'] = 'svm'
+        performance_svm[item] = result_list
+        svm_declie_dict[item] = declie_analysis(prediction, label)
 
         performance_semi_svm[item] = dict()
-        for u in [0.0001, 0.001, 0.01, 0.1, 1, 10, 100]:
-            for w in [0.0001, 0.001, 0.01, 0.1, 1, 10, 100]:
-                print('semi-svm, u = {0}, w = {1}'.format(u, w))
+        semi_declie_dict[item] = dict()
+        for u in [0.001, 0.01, 0.1, 1, 10, 100]:
+            for w in [0.001, 0.01, 0.1, 1, 10, 100]:
                 prediction = read_result(path_dict[item], u=u, w=w)
                 label = label_dict[item]
-                tp, tn, fp, fn = get_confusion_mat(prediction, label)
                 key_name = '{}u{}w{}'.format(item, u, w)
-                performance_semi_svm[item][key_name] = performance_eval(tp, tn, fp, fn, item)
+                result_list = performance_eval(prediction, label)
+                result_list['para'] = key_name
+                performance_semi_svm[item][key_name] = result_list
+                semi_declie_dict[item][key_name] = declie_analysis(prediction, label)
 
-    best_dict = find_best(performance_svm, performance_semi_svm)
-    write_best(os.path.join(root, 'best_result_dict.csv'), best_dict)
+    now = datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+    best_dict = find_best_performance(performance_svm, performance_semi_svm)
+    write_best_performance(os.path.join(root, 'svm_result_{}.csv'.format(now)), best_dict)
+    best_decile = find_best_declie(svm_declie_dict, semi_declie_dict, best_dict)
+    write_best_declie(best_decile, os.path.join(root, 'svm_declie_{}.csv'.format(now)))
 
 
 if __name__ == "__main__":
